@@ -1,7 +1,3 @@
-mod parameters;
-
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
+// Todo: Build an actual API
+pub mod model;
+pub mod input;

@@ -1,14 +1,23 @@
-struct CurrentFunction {
-    pub t: Vec<f64>;  // Time in seconds
-    pub i: Vec<f64>;  // Current in ampere
+#[derive(Debug, Clone)]
+pub struct CurrentFunction {
+    pub t: Vec<f64>,  // Time in seconds
+    pub i: Vec<f64>,  // Current in ampere
 }
 
 impl CurrentFunction {
+
+    /// Returns a CurrentFunction that is a full C/5 cycle of LG MJ1 18650 with timedelta 1s
+    pub fn default() -> Self {
+        let c_rate: f64 = 0.2; // inverse hours
+        let nominal_capacity = 3.2; // Ampere-hours
+        Self::cycle_from_current(3.2*c_rate, 3600.0/c_rate, 1.0)
+    }
+
     /// Generates a CurrentFunction that is a full cycle given:
     /// * current in ampere
     /// * half cycle time in seconds
     /// * timestep in seconds
-    pub fn cycle_from_current(current: f64, time: f64, dt: f64) -> CurrentFunction {
+    pub fn cycle_from_current(current: f64, time: f64, dt: f64) -> Self {
         let n_steps = (2.0 * time / dt).ceil() as usize;
         let mut t = Vec::with_capacity(n_steps);
         let mut i = Vec::with_capacity(n_steps);

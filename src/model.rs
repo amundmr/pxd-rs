@@ -1,10 +1,10 @@
 use crate::math::numerical_methods::{ftcs_stable, forward_time_centered_space_linear, forward_time_centered_space_radial};
 use crate::Simulate;
-
+use crate::ocv;
 
 use std::f64::consts::PI;
 
-const PARTICLE_DISCRETISATION: usize = 20;
+pub const PARTICLE_DISCRETISATION: usize = 20;
 const ELECTROLYTE_DISCRETISATION: usize = 20;
 const FARADAY: f64 = 96485.3321233100184; // C/mol (=As/mol), 2019 SI revision definition
 const STANDARD_TEMPERATURE: f64 = 298.15; // Kelvin
@@ -17,7 +17,6 @@ pub struct Particle {
     pub concentration: [f64; PARTICLE_DISCRETISATION],
     pub concentration_max: f64,
     pub concentration_init: f64,
-    pub open_circuit_voltage: fn(&Self)->f64,
 }
 
 impl Particle {
@@ -26,7 +25,6 @@ impl Particle {
         diffusion_coeff: f64,
         concentration_max: f64,
         concentration_init: f64,
-        open_circuit_voltage: fn(&Self)->f64,
     ) -> Self {
         let dr = radius / (PARTICLE_DISCRETISATION as f64);
         let concentration = [concentration_init; PARTICLE_DISCRETISATION];
@@ -38,11 +36,7 @@ impl Particle {
             concentration,
             concentration_max,
             concentration_init,
-            open_circuit_voltage,
         }
-    }
-    pub fn get_open_circuit_voltage(&self) -> f64 {
-        (self.open_circuit_voltage)(self)
     }
 }
 
@@ -73,41 +67,6 @@ impl SPMeModel {
 
     /// Yields an SPMe model with default parameters for an LG MJ1 18650 cylindrical cell
     pub fn default() -> Self {
-        fn open_circuit_voltage_graphite_si(particle: &Particle) -> f64 {
-            let c: f64 = particle.concentration[PARTICLE_DISCRETISATION-1];
-            let c_max: f64 = particle.concentration_max;
-            let x: f64 = c / c_max;
-    
-            let p = [
-                1.20912055e+00, 5.62297420e+01, -1.11020020e-01, -2.53458213e-01,
-                4.92581391e+01, 1.22046522e-02, 4.73538620e-02, 1.79631246e+01,
-                1.75283209e-01, 1.88038929e-02, 3.03255334e+01, 4.66328034e-01,
-            ];
-    
-            p[0] * (-p[1] * x).exp()
-            + p[2]
-            - p[3] * (p[4] * (x - p[5])).tanh()
-            - p[6] * (p[7] * (x - p[8])).tanh()
-            - p[9] * (p[10] * (x - p[11])).tanh()
-        }
-        pub fn open_circuit_voltage_nmc811(particle: &Particle) -> f64 {
-            let c: f64 = particle.concentration[PARTICLE_DISCRETISATION-1];
-            let c_max: f64 = particle.concentration_max;
-            let x = c / c_max;
-    
-            let p = [
-                0.74041974, 4.39107343, 0.03434767, 18.16841489, 0.53463176,
-                17.68283504, 14.59709162, 0.28835348, 17.58474971, 14.69911523,
-                0.28845641,
-            ];
-    
-            -p[0] * x
-            + p[1]
-            - p[2] * (p[3] * (x - p[4])).tanh()
-            - p[5] * (p[6] * (x - p[7])).tanh()
-            + p[8] * (p[9] * (x - p[10])).tanh()
-        }
-
         let model = SPMeModel {
             negative_electrode: Electrode{
                 height: 0.059, // meters
@@ -118,7 +77,6 @@ impl SPMeModel {
                     5e-14, // m^2/s
                     34684.0, // mol/m^3
                     1000.0,
-                    open_circuit_voltage_graphite_si,
                 ),
             },
             positive_electrode: Electrode {
@@ -130,7 +88,6 @@ impl SPMeModel {
                     5e-14, // m^2/s
                     50060.0, // mol/m^3
                     49000.0, // mol/m^3
-                    open_circuit_voltage_nmc811,
                 )
             },
             electrolyte: Electrolyte{
@@ -172,8 +129,8 @@ impl SPMeModel {
     }
 
     fn cell_potential(&self) -> f64 {
-        self.positive_electrode.particle.get_open_circuit_voltage()
-        - self.negative_electrode.particle.get_open_circuit_voltage()
+        ocv::open_circuit_voltage_nmc811(&self.positive_electrode.particle)
+        - ocv::open_circuit_voltage_graphite_si(&self.negative_electrode.particle)
     }
 
     fn get_number_of_particles(&self, electrode: &Electrode) -> usize{

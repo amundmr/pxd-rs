@@ -1,6 +1,7 @@
 // Todo: Build an actual API
 pub mod model;
 pub mod math;
+pub mod ocv;
 
 
 pub trait Simulate {

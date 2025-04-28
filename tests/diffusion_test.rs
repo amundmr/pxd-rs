@@ -34,14 +34,18 @@ fn test_fcts() {
     println!("The first 60 timesteps of the leftmost and second leftmost points:");
     println!("{:?}, {:?}", concentration[0], concentration[1]);
     let mut x0: f64 = concentration[0];
-    let mut x_rest: Vec<f64> = concentration[1..].to_vec();
+    let x_rest_init: Vec<f64> = concentration[1..].to_vec();
 
     for i in 0..nt {
+        // Step the method one step
         forward_time_centered_space(&mut concentration, dx, dt, diffusion_coeff);
+
+        // Print if test fails
         if i < 30 {
             println!("{:?}, {:?}", concentration[0], concentration[1]);
         }
 
+        // Maybe save to file
         if let Some(writer) = maybe_writer.as_mut() {
             let line = concentration
                 .iter()
@@ -51,15 +55,16 @@ fn test_fcts() {
             writeln!(writer, "{line}").expect("Could not write to file");
         }
 
-        // Assert monotonic change in array
-        assert!(concentration[0]<= x0, "The concentration peak is not monotonicaly decreasing.");
-        let all_less_or_equal = x_rest
+        // Assert monotonic decrease of peak
+        assert!(x0 >= concentration[0], "The concentration peak is not monotonicaly decreasing.");
+        x0 = concentration[0];
+
+        // Assert that all the other points have increased compared to t = 0
+        let all_less_or_equal = x_rest_init
             .iter()
             .zip(&concentration[1..])
             .all(|(a, b)| a <= b);
-        assert!(all_less_or_equal, "The concentration is not monotonically increasing.");
+        assert!(all_less_or_equal, "The concentration of some x-point is below the initial value.");
 
-        let mut x0: f64 = concentration[0];
-        let mut x_rest: Vec<f64> = concentration[1..].to_vec();
     }
 }

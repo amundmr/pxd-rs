@@ -23,37 +23,43 @@ fn test_fcts() {
     // Check stability with given conditions
     assert!(ftcs_stable(dt, dx, diffusion_coeff), "The parameters used makes the FTCS method unstable.");
 
-
-    // Create a file to save the results
-    let file = File::create("concentration_over_time.csv").expect("Could not create file");
-    let mut writer = BufWriter::new(file);
-
-    // Write the current concentration vector to the file
-    let line = concentration
-        .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<String>>()
-        .join(",");
-
-    writeln!(writer, "{line}").expect("Could not write to file");
-
+    // Optionally create a file writer if environment variable is set
+    let mut maybe_writer = if std::env::var("WRITE_TEST_OUTPUT").is_ok() {
+        let file = File::create("concentration_over_time.csv").expect("Could not create file");
+        Some(BufWriter::new(file))
+    } else {
+        None
+    };
 
     println!("The first 60 timesteps of the leftmost and second leftmost points:");
     println!("{:?}, {:?}", concentration[0], concentration[1]);
+    let mut x0: f64 = concentration[0];
+    let mut x_rest: Vec<f64> = concentration[1..].to_vec();
+
     for i in 0..nt {
         forward_time_centered_space(&mut concentration, dx, dt, diffusion_coeff);
-        if i < 60 {
+        if i < 30 {
             println!("{:?}, {:?}", concentration[0], concentration[1]);
         }
 
-        // Write the current concentration vector to the file
-        let line = concentration
+        if let Some(writer) = maybe_writer.as_mut() {
+            let line = concentration
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            writeln!(writer, "{line}").expect("Could not write to file");
+        }
+
+        // Assert monotonic change in array
+        assert!(concentration[0]<= x0, "The concentration peak is not monotonicaly decreasing.");
+        let all_less_or_equal = x_rest
             .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<String>>()
-            .join(",");
+            .zip(&concentration[1..])
+            .all(|(a, b)| a <= b);
+        assert!(all_less_or_equal, "The concentration is not monotonically increasing.");
 
-        writeln!(writer, "{line}").expect("Could not write to file");
+        let mut x0: f64 = concentration[0];
+        let mut x_rest: Vec<f64> = concentration[1..].to_vec();
     }
-
 }

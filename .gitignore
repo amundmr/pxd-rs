@@ -20,4 +20,8 @@ target/
 
 /target
 
+# Visualizing results
 /ipynb
+
+# Test data
+*.csv

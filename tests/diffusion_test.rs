@@ -1,4 +1,4 @@
-use pxd::math::numerical_methods::{ftcs_stable, forward_time_centered_space};
+use pxd::math::numerical_methods::{ftcs_stable, forward_time_centered_space_linear, forward_time_centered_space_radial};
 use std::fs::File;
 use std::io::{Write, BufWriter};
 
@@ -38,7 +38,7 @@ fn test_fcts() {
 
     for i in 0..nt {
         // Step the method one step
-        forward_time_centered_space(&mut concentration, dx, dt, diffusion_coeff);
+        forward_time_centered_space_linear(&mut concentration, dx, dt, diffusion_coeff);
 
         // Print if test fails
         if i < 30 {

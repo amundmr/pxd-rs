@@ -2,3 +2,8 @@
 pub mod model;
 pub mod input;
 pub mod math;
+
+
+pub trait Simulate {
+    fn simulate(&mut self, time: &[f64], current: &[f64]) -> Vec<f64>;
+}

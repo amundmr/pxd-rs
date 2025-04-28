@@ -1,7 +1,9 @@
 use crate::input::CurrentFunction;
-use crate::math::numerical_methods::{ftcs_stable, forward_time_centered_space};
+use crate::math::numerical_methods::{ftcs_stable, forward_time_centered_space_linear, forward_time_centered_space_radial};
+use crate::Simulate;
 
 
+use std::cell;
 use std::f64::consts::PI;
 
 const PARTICLE_DISCRETISATION: usize = 20;
@@ -114,25 +116,25 @@ impl SPMeModel {
                 height: 0.059, // meters
                 width: 1.22,    // meters
                 thickness: 86.7e-6, // meters
-                particle: Particle::new{
-                    radius: 6.1e-6, // meters
-                    diffusion_coeff: 5e-14, // m^2/s
-                    concentration_max: 34684.0, // mol/m^3
-                    concentration_init: 1000.0,
-                    open_circuit_voltage: open_circuit_voltage_graphite_si,
-                },
+                particle: Particle::new(
+                    6.1e-6, // meters
+                    5e-14, // m^2/s
+                    34684.0, // mol/m^3
+                    1000.0,
+                    open_circuit_voltage_graphite_si,
+                ),
             },
             positive_electrode: Electrode {
                 height: 0.059, // meters
                 width: 1.22, // meters
                 thickness: 66.2e-6, // meters
-                particle: Particle::new{
-                    radius: 3.8e-6, // meters
-                    diffusion_coeff: 5e-14, // m^2/s
-                    concentration_max: 50060.0, // mol/m^3
-                    concentration_init: 49000.0,
-                    open_circuit_voltage: open_circuit_voltage_nmc811,
-                }
+                particle: Particle::new(
+                    3.8e-6, // meters
+                    5e-14, // m^2/s
+                    50060.0, // mol/m^3
+                    49000.0, // mol/m^3
+                    open_circuit_voltage_nmc811,
+                )
             },
             electrolyte: Electrolyte{
                 concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
@@ -179,21 +181,30 @@ impl SPMeModel {
         -
         self.negative_electrode.particle.get_open_circuit_voltage()
     }
+}
+impl Simulate for SPMeModel {
+    fn simulate(&mut self, time: &[f64], current: &[f64]) -> Vec<f64> {
+        // Check that the time and current vectors are the same length
+        assert_eq!(time.len(), current.len(), "Time and current vectors must be the same length");
+        // Check that the time vector is sorted
+        assert!(time.windows(2).all(|w| w[0] < w[1]), "Time vector must be sorted");
+        // Check that the current vector is not empty
+        assert!(!current.is_empty(), "Current vector must not be empty");
 
-    pub fn simulate(&self) {
+
         // Set up cell potential over time
-        let mut cell_potential: Vec<f64> = vec![0.0; self.current_function.t.len()];
+        let mut cell_potential: Vec<f64> = vec![0.0; time.len()];
         let electrolyte_dx: f64 = self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64;
-        for t in self.current_function.t {
+        for t in time.iter() {
             // Step the electrolyte concentration in time
-            forward_time_centered_space(
+            forward_time_centered_space_linear(
                 &mut self.electrolyte.concentration,
                 electrolyte_dx,
                 self.current_function.dt,
                 self.electrolyte.diffusion_coeff
             );
             // Step the particles' concentration in time
-            forward_time_centered_space(
+            forward_time_centered_space_radial(
                 &mut self.negative_electrode.particle.concentration,
                 electrolyte_dx,
                 self.current_function.dt,
@@ -201,8 +212,9 @@ impl SPMeModel {
             );
 
             // Calculate cell potential
-            //
+            
         }
+        cell_potential
     }
 
     // /// Returns cell voltage given the particle surface lithium concentration of the negative and positive electrode

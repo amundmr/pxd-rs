@@ -1,9 +1,7 @@
-use crate::input::CurrentFunction;
 use crate::math::numerical_methods::{ftcs_stable, forward_time_centered_space_linear, forward_time_centered_space_radial};
 use crate::Simulate;
 
 
-use std::cell;
 use std::f64::consts::PI;
 
 const PARTICLE_DISCRETISATION: usize = 20;
@@ -69,7 +67,6 @@ pub struct SPMeModel {
     pub negative_electrode: Electrode,
     pub positive_electrode: Electrode,
     pub electrolyte: Electrolyte,
-    pub current_function: CurrentFunction,
 }
 
 impl SPMeModel {
@@ -142,17 +139,15 @@ impl SPMeModel {
                 diffusion_coeff: 1e-11, // m^2/s
                 thickness: 100e-6, // meters
             },
-            current_function: CurrentFunction::default(),
         };
-        model.assert_ftcs_stability();
         model
     }
 
-    fn assert_ftcs_stability(&self) {
+    fn assert_ftcs_stability(&self, dt: f64) {
         // Check stability of numerical method in particles and electrolyte
         assert!(
             ftcs_stable(
-                self.current_function.dt, 
+                dt, 
                 self.negative_electrode.particle.radius / PARTICLE_DISCRETISATION as f64, 
                 self.negative_electrode.particle.diffusion_coeff
             ), 
@@ -160,7 +155,7 @@ impl SPMeModel {
         );
         assert!(
             ftcs_stable(
-                self.current_function.dt, 
+                dt, 
                 self.positive_electrode.particle.radius / PARTICLE_DISCRETISATION as f64, 
                 self.positive_electrode.particle.diffusion_coeff
             ), 
@@ -168,7 +163,7 @@ impl SPMeModel {
         );
         assert!(
             ftcs_stable(
-                self.current_function.dt, 
+                dt, 
                 self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64, 
                 self.electrolyte.diffusion_coeff
             ), 
@@ -178,10 +173,18 @@ impl SPMeModel {
 
     fn cell_potential(&self) -> f64 {
         self.positive_electrode.particle.get_open_circuit_voltage()
-        -
-        self.negative_electrode.particle.get_open_circuit_voltage()
+        - self.negative_electrode.particle.get_open_circuit_voltage()
+    }
+
+    fn get_number_of_particles(&self, electrode: &Electrode) -> usize{
+        // TODO: this scaling concept doesn't work at all. Dividing by 3_000_000.0 is just a guess.
+        // Calculate number of particles
+        // (electrode.thickness * electrode.height * electrode.width
+        // / (4.0/3.0 * PI * electrode.particle.radius.powi(3))) as usize
+        ((electrode.thickness / electrode.particle.radius) * (electrode.height / electrode.particle.radius) * (electrode.width / electrode.particle.radius) / 3_000_00.0) as usize
     }
 }
+
 impl Simulate for SPMeModel {
     fn simulate(&mut self, time: &[f64], current: &[f64]) -> Vec<f64> {
         // Check that the time and current vectors are the same length
@@ -190,29 +193,52 @@ impl Simulate for SPMeModel {
         assert!(time.windows(2).all(|w| w[0] < w[1]), "Time vector must be sorted");
         // Check that the current vector is not empty
         assert!(!current.is_empty(), "Current vector must not be empty");
+        // Check that the time vector has a constant timestep
+        let dt: f64 = time[1] - time[0];
+        assert!(time.windows(2).all(|w| (w[1] - w[0] - dt).abs() < 1e-9), "Time vector must have a constant timestep");
+        
+        self.assert_ftcs_stability(dt);
+
+
+        // Calculate number of particles
+        // TODO: Scaling the current by the number of particles doesn't work at all.
+        let n_negative_particles: usize = self.get_number_of_particles(&self.negative_electrode);
+        let n_positive_particles: usize = self.get_number_of_particles(&self.positive_electrode);
 
 
         // Set up cell potential over time
         let mut cell_potential: Vec<f64> = vec![0.0; time.len()];
         let electrolyte_dx: f64 = self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64;
-        for t in time.iter() {
+
+        for i in 0..time.len() {
             // Step the electrolyte concentration in time
             forward_time_centered_space_linear(
                 &mut self.electrolyte.concentration,
                 electrolyte_dx,
-                self.current_function.dt,
+                dt,
                 self.electrolyte.diffusion_coeff
             );
             // Step the particles' concentration in time
             forward_time_centered_space_radial(
                 &mut self.negative_electrode.particle.concentration,
-                electrolyte_dx,
-                self.current_function.dt,
-                self.negative_electrode.particle.diffusion_coeff
+                self.negative_electrode.particle.dr,
+                dt,
+                self.negative_electrode.particle.diffusion_coeff,
+                self.negative_electrode.particle.radius,
+                current[i] / n_negative_particles as f64, // flux
+            );
+            forward_time_centered_space_radial(
+                &mut self.positive_electrode.particle.concentration,
+                self.positive_electrode.particle.dr,
+                dt,
+                self.positive_electrode.particle.diffusion_coeff,
+                self.positive_electrode.particle.radius,
+                -current[i] / n_positive_particles as f64, // flux
             );
 
+
             // Calculate cell potential
-            
+            cell_potential[i] = self.cell_potential();
         }
         cell_potential
     }

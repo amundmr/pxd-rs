@@ -1,12 +1,25 @@
 use pxd::model::SPMeModel;
 use pxd::Simulate;
 
+use std::fs::File;
+use std::io::{Write, BufWriter};
+
+fn save_vec_to_file(vec: &Vec<f64>, filename: &str) -> std::io::Result<()> {
+    let file = File::create(filename)?;
+    let mut writer = BufWriter::new(file);
+    for value in vec {
+        writeln!(writer, "{}", value)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn simulate_default_cycle() {
     // Generate input
-    let time: f64 = 60.0 * 20.0; // seconds
+    // 1C charge and 1C discharge for LG MJ1 18650 cell
+    let time: f64 = 60.0 * 60.0; // seconds
     let dt: f64 = 0.1; // seconds
-    let current: f64 = 1.0; // Amperes
+    let current: f64 = 3.2; // Amperes
     let n_steps: usize = (2.0 * time / dt).ceil() as usize;
     let mut t: Vec<f64> = vec![0.0; n_steps];
     let mut i: Vec<f64> = vec![0.0; n_steps];
@@ -16,13 +29,15 @@ fn simulate_default_cycle() {
         t[step] = time_val;
 
         let current_val = if time_val < time {
-                current
+                -current // charge
             } else {
-                -current
+                current
             };
         i[step] = current_val;
     }
     let mut model = SPMeModel::default();
 
-    model.simulate(&t, &i);
+    let cell_potential = model.simulate(&t, &i);
+    println!("{:?}", cell_potential);
+    save_vec_to_file(&cell_potential, "cell_voltage.csv").unwrap();
 }

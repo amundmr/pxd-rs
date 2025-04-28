@@ -1,4 +1,6 @@
 use crate::input::CurrentFunction;
+use crate::math::numerical_methods::{ftcs_stable, forward_time_centered_space};
+
 
 use std::f64::consts::PI;
 
@@ -10,16 +12,46 @@ const STANDARD_TEMPERATURE: f64 = 298.15; // Kelvin
 #[derive(Debug, Clone, Copy)]
 pub struct Particle {
     pub radius: f64,
+    pub dr: f64,
     pub diffusion_coeff: f64,
     pub concentration: [f64; PARTICLE_DISCRETISATION],
     pub concentration_max: f64,
-    pub open_circuit_voltage: fn(f64, f64)->f64,
+    pub concentration_init: f64,
+    pub open_circuit_voltage: fn(&Self)->f64,
+}
+
+impl Particle {
+    pub fn new(
+        radius: f64,
+        diffusion_coeff: f64,
+        concentration_max: f64,
+        concentration_init: f64,
+        open_circuit_voltage: fn(&Self)->f64,
+    ) -> Self {
+        let dr = radius / (PARTICLE_DISCRETISATION as f64);
+        let concentration = [concentration_init; PARTICLE_DISCRETISATION];
+
+        Particle {
+            radius,
+            dr,
+            diffusion_coeff,
+            concentration,
+            concentration_max,
+            concentration_init,
+            open_circuit_voltage,
+        }
+    }
+    pub fn get_open_circuit_voltage(&self) -> f64 {
+        (self.open_circuit_voltage)(self)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Electrolyte {
+pub struct Electrolyte { // This is used in place of separator for the time being
     pub concentration: [f64; ELECTROLYTE_DISCRETISATION],
     pub conductivity: f64,
+    pub diffusion_coeff: f64,
+    pub thickness: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,7 +74,9 @@ impl SPMeModel {
 
     /// Yields an SPMe model with default parameters for an LG MJ1 18650 cylindrical cell
     pub fn default() -> Self {
-        fn open_circuit_voltage_graphite_si(c_max: f64, c: f64) -> f64 {
+        fn open_circuit_voltage_graphite_si(particle: &Particle) -> f64 {
+            let c: f64 = particle.concentration[PARTICLE_DISCRETISATION-1];
+            let c_max: f64 = particle.concentration_max;
             let x: f64 = c / c_max;
     
             let p = [
@@ -57,7 +91,9 @@ impl SPMeModel {
             - p[6] * (p[7] * (x - p[8])).tanh()
             - p[9] * (p[10] * (x - p[11])).tanh()
         }
-        pub fn open_circuit_voltage_nmc811(c_max: f64, c: f64) -> f64 {
+        pub fn open_circuit_voltage_nmc811(particle: &Particle) -> f64 {
+            let c: f64 = particle.concentration[PARTICLE_DISCRETISATION-1];
+            let c_max: f64 = particle.concentration_max;
             let x = c / c_max;
     
             let p = [
@@ -73,16 +109,16 @@ impl SPMeModel {
             + p[8] * (p[9] * (x - p[10])).tanh()
         }
 
-        SPMeModel {
+        let model = SPMeModel {
             negative_electrode: Electrode{
                 height: 0.059, // meters
                 width: 1.22,    // meters
                 thickness: 86.7e-6, // meters
-                particle: Particle{
+                particle: Particle::new{
                     radius: 6.1e-6, // meters
                     diffusion_coeff: 5e-14, // m^2/s
-                    concentration: [1000.0; PARTICLE_DISCRETISATION], // mol/m^3
                     concentration_max: 34684.0, // mol/m^3
+                    concentration_init: 1000.0,
                     open_circuit_voltage: open_circuit_voltage_graphite_si,
                 },
             },
@@ -90,19 +126,82 @@ impl SPMeModel {
                 height: 0.059, // meters
                 width: 1.22, // meters
                 thickness: 66.2e-6, // meters
-                particle: Particle{
+                particle: Particle::new{
                     radius: 3.8e-6, // meters
                     diffusion_coeff: 5e-14, // m^2/s
-                    concentration: [49000.0; PARTICLE_DISCRETISATION], // mol/m^3
                     concentration_max: 50060.0, // mol/m^3
+                    concentration_init: 49000.0,
                     open_circuit_voltage: open_circuit_voltage_nmc811,
                 }
             },
             electrolyte: Electrolyte{
                 concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
                 conductivity: 0.8, // S/m
+                diffusion_coeff: 1e-11, // m^2/s
+                thickness: 100e-6, // meters
             },
             current_function: CurrentFunction::default(),
+        };
+        model.assert_ftcs_stability();
+        model
+    }
+
+    fn assert_ftcs_stability(&self) {
+        // Check stability of numerical method in particles and electrolyte
+        assert!(
+            ftcs_stable(
+                self.current_function.dt, 
+                self.negative_electrode.particle.radius / PARTICLE_DISCRETISATION as f64, 
+                self.negative_electrode.particle.diffusion_coeff
+            ), 
+            "FTCS method not stable for negative particle"
+        );
+        assert!(
+            ftcs_stable(
+                self.current_function.dt, 
+                self.positive_electrode.particle.radius / PARTICLE_DISCRETISATION as f64, 
+                self.positive_electrode.particle.diffusion_coeff
+            ), 
+            "FTCS method not stable for positive particle"
+        );
+        assert!(
+            ftcs_stable(
+                self.current_function.dt, 
+                self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64, 
+                self.electrolyte.diffusion_coeff
+            ), 
+            "FTCS method not stable for electrolyte"
+        );
+    }
+
+    fn cell_potential(&self) -> f64 {
+        self.positive_electrode.particle.get_open_circuit_voltage()
+        -
+        self.negative_electrode.particle.get_open_circuit_voltage()
+    }
+
+    pub fn simulate(&self) {
+        // Set up cell potential over time
+        let mut cell_potential: Vec<f64> = vec![0.0; self.current_function.t.len()];
+        let electrolyte_dx: f64 = self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64;
+        for t in self.current_function.t {
+            // Step the electrolyte concentration in time
+            forward_time_centered_space(
+                &mut self.electrolyte.concentration,
+                electrolyte_dx,
+                self.current_function.dt,
+                self.electrolyte.diffusion_coeff
+            );
+            // Step the particles' concentration in time
+            forward_time_centered_space(
+                &mut self.negative_electrode.particle.concentration,
+                electrolyte_dx,
+                self.current_function.dt,
+                self.negative_electrode.particle.diffusion_coeff
+            );
+
+            // Calculate cell potential
+            //
         }
     }
 

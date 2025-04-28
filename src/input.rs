@@ -2,6 +2,7 @@
 pub struct CurrentFunction {
     pub t: Vec<f64>,  // Time in seconds
     pub i: Vec<f64>,  // Current in ampere
+    pub dt: f64,    // Time step
 }
 
 impl CurrentFunction {
@@ -10,7 +11,7 @@ impl CurrentFunction {
     pub fn default() -> Self {
         let c_rate: f64 = 0.2; // inverse hours
         let nominal_capacity = 3.2; // Ampere-hours
-        Self::cycle_from_current(3.2*c_rate, 3600.0/c_rate, 1.0)
+        Self::cycle_from_current(3.2*c_rate, 3600.0/c_rate, 0.1)
     }
 
     /// Generates a CurrentFunction that is a full cycle given:
@@ -34,7 +35,7 @@ impl CurrentFunction {
             i.push(current_val);
         }
 
-        CurrentFunction { t, i }
+        CurrentFunction { t, i, dt}
     }
 
     /// Returns the current given a specific time

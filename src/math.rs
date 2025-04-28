@@ -12,23 +12,27 @@ pub mod numerical_methods {
         let dx2 = dx * dx;
         let adt = a * dt;
 
+        let mut y_prev: f64 = y[0];
+
+        // Left boundary by forward difference (before y[1] is iterated)
+        let dy_dx_left = (y[1] - y[0]) / dx;
+        // Right boundary by backward difference (before y[n-2] is iterated)
+        let dy_dx_right = (y[n-1] - y[n-2]) / dx;
+
         // Interior points
         for i in 1..n-1 {
-            let d2y_dx2 = (y[i-1] - 2.0 * y[i] + y[i+1]) / dx2; // Central difference
-            y_new[i] = y[i] + adt * d2y_dx2; // Forward Euler
+            let d2y_dx2 = (y_prev - 2.0 * y[i] + y[i+1]) / dx2; // Central difference
+            y_prev = y[i]; // Make sure we store the value before overwriting
+            y[i] = y[i] + adt * d2y_dx2; // Forward Euler
         }
 
-        // Left boundary by forward difference and flux
-        let dy_dx_left = (y[1] - y[0]) / dx;
+        // Left boundary by forward difference
         let flux_left = 0.0;
-        y_new[0] = y[0] + adt * (2.0 * (dy_dx_left - flux_left)/dx);
+        y[0] = y[0] + adt * (2.0 * (dy_dx_left - flux_left)/dx);
 
-        // right boundary by backward difference and flux
-        let dy_dx_right = (y[n-1] - y[n-2]) / dx;
+        // Right boundary by backward difference
         let flux_right = 0.0;
-        y_new[n-1] = y[n-1] + adt * (2.0 * (dy_dx_right - flux_right)/dx);
-
-        y.copy_from_slice(&y_new);
+        y[n-1] = y[n-1] + adt * (2.0 * (dy_dx_right - flux_right)/dx);
     }
 
     pub fn ftcs_stable(dt: f64, dx: f64, alpha: f64) -> bool {

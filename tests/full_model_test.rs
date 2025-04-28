@@ -29,9 +29,9 @@ fn simulate_default_cycle() {
         t[step] = time_val;
 
         let current_val = if time_val < time {
-                -current // charge
+                current // charge
             } else {
-                current
+                -current
             };
         i[step] = current_val;
     }

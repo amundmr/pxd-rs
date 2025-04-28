@@ -63,10 +63,10 @@ pub struct SPMeModel {
     pub electrolyte: Electrolyte,
 }
 
-impl SPMeModel {
+impl Default for SPMeModel {
 
     /// Yields an SPMe model with default parameters for an LG MJ1 18650 cylindrical cell
-    pub fn default() -> Self {
+    fn default() -> Self {
         let model = SPMeModel {
             negative_electrode: Electrode{
                 height: 0.059, // meters
@@ -99,7 +99,9 @@ impl SPMeModel {
         };
         model
     }
+}
 
+impl SPMeModel {
     fn assert_ftcs_stability(&self, dt: f64) {
         // Check stability of numerical method in particles and electrolyte
         assert!(
@@ -182,7 +184,7 @@ impl Simulate for SPMeModel {
                 dt,
                 self.negative_electrode.particle.diffusion_coeff,
                 self.negative_electrode.particle.radius,
-                current[i] / n_negative_particles as f64, // flux
+                -current[i] / n_negative_particles as f64, // flux
             );
             forward_time_centered_space_radial(
                 &mut self.positive_electrode.particle.concentration,
@@ -190,7 +192,7 @@ impl Simulate for SPMeModel {
                 dt,
                 self.positive_electrode.particle.diffusion_coeff,
                 self.positive_electrode.particle.radius,
-                -current[i] / n_positive_particles as f64, // flux
+                current[i] / n_positive_particles as f64, // flux
             );
 
 
@@ -199,26 +201,4 @@ impl Simulate for SPMeModel {
         }
         cell_potential
     }
-
-    // /// Returns cell voltage given the particle surface lithium concentration of the negative and positive electrode
-    // fn u_cell(c_n_s: f64, c_p_s: f64) -> f64 {
-    //     self.p.u_p(c_p_s) - self.p.u_n(c_n_s)
-    // }
-
-    // fn sphere_volume(r: f64) -> f64 {
-    //     4.0/3.0 * self.p.pi*r**3
-    // }
-
-    // /// Returns the change in concentration for a given time, concentration, electrode domain and particle radius
-    // fn dcdt(&self, time: f64, c: f64, domain: u8, r: f64) -> f64 {
-
-    //     let mut polarity = 1;
-    //     if domain == 0 { // negative electrode
-    //         polarity = 1;
-    //     } else if domain == 2 { // positive electrode
-    //         polarity = -1;
-    //     }
-
-    //     polarity * self.cf.current(time) / (self.p.n * self.p.F * self.sphere_volume(r))
-    // }
 }

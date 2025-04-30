@@ -92,3 +92,11 @@ pub mod numerical_methods {
         // r is the surface so need to do n*dr here
     }
 }
+
+pub mod utils {
+    pub fn arcsinh(x: f64) -> f64 {
+        // Returns the inverse hyperbolic sine of x
+        // arcsinh(x) = ln(x + sqrt(x^2 + 1))
+        (x + (x * x + 1.0).sqrt()).ln()
+    }
+}

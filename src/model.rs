@@ -1,6 +1,7 @@
 use crate::math::numerical_methods::{
     forward_time_centered_space_linear, forward_time_centered_space_radial, ftcs_stable,
 };
+use crate::math::utils::{arcsinh};
 use crate::ocv;
 use crate::Simulate;
 
@@ -9,6 +10,7 @@ use std::f64::consts::PI;
 pub const PARTICLE_DISCRETISATION: usize = 20;
 const ELECTROLYTE_DISCRETISATION: usize = 20;
 const FARADAY: f64 = 96485.3321233100184; // C/mol (=As/mol), 2019 SI revision definition
+const GAS_CONSTANT: f64 = 8.31446261815324; // J/(mol*K), 2019 SI revision definition
 const STANDARD_TEMPERATURE: f64 = 298.15; // Kelvin
 
 #[derive(Debug, Clone, Copy)]
@@ -135,19 +137,50 @@ impl SPMeModel {
         );
     }
 
-    fn cell_potential(&self) -> f64 {
+
+    fn butler_volmer_overpotential(&self, current_density: f64, electrode: &Electrode) -> f64 {
+        // Butler volmer overpotential, eta
+        // TODO: make B-V function parameters tunable
+        let alpha: f64 = 0.5; // charge transfer coefficient
+        let reaction_rate_constant: f64 = 1e-3; // reaction rate constant
+        let c_e: f64 = 1000.0; // electrolyte concentration mol/m^3, TODO: change this to real value
+        let exchange_current_density: f64 = 
+            reaction_rate_constant 
+            * c_e.powf(alpha) 
+            * electrode.particle.concentration[PARTICLE_DISCRETISATION - 1].powf(alpha)
+            * (1.0 - ( electrode.particle.concentration[PARTICLE_DISCRETISATION - 1] / electrode.particle.concentration_max ) ).powf(alpha);
+
+        // Symmetric butler volmer, only valid for alpha = 0.5
+        let butler_volmer: f64 = ( 2.0 * GAS_CONSTANT * STANDARD_TEMPERATURE / FARADAY )
+            * arcsinh(
+                current_density / ( 2.0* exchange_current_density * self.specific_interfacial_surface_area(electrode) * electrode.thickness )
+            );
+        - butler_volmer // negative sign since we define positive current as charge.
+    }
+
+    fn cell_potential(&self, current: f64) -> f64 {
+        let cell_area: f64 = self.negative_electrode.height * self.negative_electrode.width;
+        let current_density: f64 = current / cell_area; // A/m^2
         ocv::open_circuit_voltage_nmc811(&self.positive_electrode.particle)
             - ocv::open_circuit_voltage_graphite_si(&self.negative_electrode.particle)
+            - self.butler_volmer_overpotential(current_density, &self.negative_electrode)
+            - self.butler_volmer_overpotential(current_density, &self.positive_electrode)
     }
+
+    fn specific_interfacial_surface_area(&self, electrode: &Electrode) -> f64 {
+        // The specific interfacial surface area is the surface area per unit volume, and it's use
+        // assumes a uniform distribution of monodisperse spherical particles.
+        // $a = 3 \cdot \frac{\epsilon}{r}$
+        let a: f64 = 3.0 * electrode.active_material_volume_fraction / electrode.particle.radius;
+        a
+    }
+
     fn particle_surface_flux(&self, current: f64, electrode: &Electrode) -> f64 {
         // The calculation of flux at the particle surface is the current density (cell current divided by electrode area) 
         // divided by Faraday's constant, $F$, (conversion of current to moles), the 
         // specific interfacial surface area, $a$, and the thickness of the electrode, $L$.
-        // 
-        // The specific interfacial surface area is the surface area per unit volume, and it's use
-        // assumes a uniform distribution of monodisperse spherical particles.
         let current_density: f64 = current / (electrode.height * electrode.width); // A/m^2
-        let a: f64 = 3.0 * electrode.active_material_volume_fraction / electrode.particle.radius; // Replace 0.7 for active material volume fraction, epsilon
+        let a: f64 = self.specific_interfacial_surface_area(electrode);
         let flux: f64 = current_density / ( FARADAY * a * electrode.thickness ); // mol/(s*m^2)
         flux
     }
@@ -212,7 +245,7 @@ impl Simulate for SPMeModel {
             );
 
             // Calculate cell potential
-            cell_potential[i] = self.cell_potential();
+            cell_potential[i] = self.cell_potential(current[i]);
         }
         cell_potential
     }

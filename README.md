@@ -10,6 +10,8 @@ Numerical method is central difference and forward Euler.
 - [x] Fickian diffusion in particles
 - [ ] Butler-Volmer kinetics
 - [ ] Migration in electrolyte
+- [x] Active material volume fraction
+- [ ] Bruggeman correction
 
 
 ![Current Status](current_status.png)

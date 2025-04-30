@@ -77,10 +77,11 @@ pub mod numerical_methods {
 
         // Interior points
         for i in 1..n - 1 {
+            let rn: f64 = i as f64 * dr; // r is the distance from the center of the particle
             let d2y_dr2 = (y_prev - 2.0 * y[i] + y[i + 1]) / dr2; // Central difference
             let dy_dr = (y[i + 1] - y[i - 1]) / (2.0 * dr); // Central difference
             y_prev = y[i]; // Make sure we store the value before overwriting
-            y[i] = y[i] + adt * (d2y_dr2 + 2.0 / (i as f64 * dr) * dy_dr); // Forward Euler
+            y[i] = y[i] + adt * (d2y_dr2 + 2.0 / rn * dy_dr); // Forward Euler
         }
 
         // Left boundary by fwd euler

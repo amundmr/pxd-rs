@@ -57,6 +57,7 @@ pub struct Electrode {
     pub width: f64,
     pub thickness: f64,
     pub particle: Particle,
+    pub active_material_volume_fraction: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +81,7 @@ impl Default for SPMeModel {
                     34684.0, // mol/m^3
                     1000.0,
                 ),
+                active_material_volume_fraction: 0.694,
             },
             positive_electrode: Electrode {
                 height: 0.059,      // meters
@@ -91,6 +93,7 @@ impl Default for SPMeModel {
                     50060.0, // mol/m^3
                     49000.0, // mol/m^3
                 ),
+                active_material_volume_fraction: 0.754,
             },
             electrolyte: Electrolyte {
                 concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
@@ -136,17 +139,19 @@ impl SPMeModel {
         ocv::open_circuit_voltage_nmc811(&self.positive_electrode.particle)
             - ocv::open_circuit_voltage_graphite_si(&self.negative_electrode.particle)
     }
-
-    fn get_number_of_particles(&self, electrode: &Electrode) -> usize {
-        // TODO: this scaling concept doesn't work at all. Dividing by 3_000_000.0 is just a guess.
-        // Calculate number of particles
-        // (electrode.thickness * electrode.height * electrode.width
-        // / (4.0/3.0 * PI * electrode.particle.radius.powi(3))) as usize
-        ((electrode.thickness / electrode.particle.radius)
-            * (electrode.height / electrode.particle.radius)
-            * (electrode.width / electrode.particle.radius)
-            / 3_000_00.0) as usize
+    fn particle_surface_flux(&self, current: f64, electrode: &Electrode) -> f64 {
+        // The calculation of flux at the particle surface is the current density (cell current divided by electrode area) 
+        // divided by Faraday's constant, $F$, (conversion of current to moles), the 
+        // specific interfacial surface area, $a$, and the thickness of the electrode, $L$.
+        // 
+        // The specific interfacial surface area is the surface area per unit volume, and it's use
+        // assumes a uniform distribution of monodisperse spherical particles.
+        let current_density: f64 = current / (electrode.height * electrode.width); // A/m^2
+        let a: f64 = 3.0 * electrode.active_material_volume_fraction / electrode.particle.radius; // Replace 0.7 for active material volume fraction, epsilon
+        let flux: f64 = current_density / ( FARADAY * a * electrode.thickness ); // mol/(s*m^2)
+        flux
     }
+
 }
 
 impl Simulate for SPMeModel {
@@ -173,11 +178,6 @@ impl Simulate for SPMeModel {
 
         self.assert_ftcs_stability(dt);
 
-        // Calculate number of particles
-        // TODO: Scaling the current by the number of particles doesn't work at all.
-        let n_negative_particles: usize = self.get_number_of_particles(&self.negative_electrode);
-        let n_positive_particles: usize = self.get_number_of_particles(&self.positive_electrode);
-
         // Set up cell potential over time
         let mut cell_potential: Vec<f64> = vec![0.0; time.len()];
         let electrolyte_dx: f64 = self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64;
@@ -190,22 +190,25 @@ impl Simulate for SPMeModel {
                 dt,
                 self.electrolyte.diffusion_coeff,
             );
+
             // Step the particles' concentration in time
+            let flux_n: f64 = -self.particle_surface_flux(current[i], &self.negative_electrode);
             forward_time_centered_space_radial(
                 &mut self.negative_electrode.particle.concentration,
                 self.negative_electrode.particle.dr,
                 dt,
                 self.negative_electrode.particle.diffusion_coeff,
                 self.negative_electrode.particle.radius,
-                -current[i] / n_negative_particles as f64, // flux
+                flux_n, // flux
             );
+            let flux_p: f64 = self.particle_surface_flux(current[i], &self.positive_electrode);
             forward_time_centered_space_radial(
                 &mut self.positive_electrode.particle.concentration,
                 self.positive_electrode.particle.dr,
                 dt,
                 self.positive_electrode.particle.diffusion_coeff,
                 self.positive_electrode.particle.radius,
-                current[i] / n_positive_particles as f64, // flux
+                flux_p, // flux
             );
 
             // Calculate cell potential

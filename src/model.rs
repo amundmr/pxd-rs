@@ -1,16 +1,10 @@
-use crate::Simulate;
 use crate::math::numerical_methods::{
     forward_time_centered_space_linear, forward_time_centered_space_radial, ftcs_stable,
 };
 use crate::math::utils::arcsinh;
 use crate::ocv;
+use crate::{ELECTROLYTE_DISCRETISATION, PARTICLE_DISCRETISATION, Simulate, SimulationStepOutput};
 
-use std::fs::OpenOptions;
-use std::io::BufWriter;
-use std::io::Write;
-
-pub const PARTICLE_DISCRETISATION: usize = 20;
-const ELECTROLYTE_DISCRETISATION: usize = 20;
 const FARADAY: f64 = 96_485.332_123_310_02; // C/mol (=As/mol), 2019 SI revision definition
 const GAS_CONSTANT: f64 = 8.314_462_618_153_24; // J/(mol*K), 2019 SI revision definition
 const STANDARD_TEMPERATURE: f64 = 298.15; // Kelvin
@@ -229,40 +223,14 @@ impl SPMeModel {
         let flux: f64 = current_density / FARADAY; // mol/(s*m^2)
         flux
     }
-
-    fn save_to_file(&self, vec: &Vec<[f64; 20]>, filename: &str) -> std::io::Result<()> {
-        let file = OpenOptions::new()
-            .create(true) // Create the file if it doesn't exist
-            .append(true) // Open the file in append mode
-            .open(filename)?;
-        let mut writer = BufWriter::new(file);
-
-        // Iterate over each line (inner Vec<f64>)
-        for line_vec in vec {
-            let line = line_vec
-                .iter()
-                .map(|value| value.to_string()) // Convert each value to a string
-                .collect::<Vec<String>>()
-                .join(","); // Join values with commas
-
-            // Write the entire line to the file
-            writeln!(writer, "{line}")?;
-        }
-
-        Ok(())
-    }
-
-    fn save_model_state(&self) -> std::io::Result<()> {
-        self.save_to_file(
-            &self.concentration.to_vec(),
-            "electrolyte_concentration.csv",
-        )?;
-        Ok(())
-    }
 }
 
 impl Simulate for SPMeModel {
-    fn simulate(&mut self, time: &[f64], current: &[f64]) -> Vec<f64> {
+    fn simulate(
+        &mut self,
+        time: &[f64],
+        current: &[f64],
+    ) -> impl Iterator<Item = SimulationStepOutput> {
         // Check that the time and current vectors are the same length
         assert_eq!(
             time.len(),
@@ -284,12 +252,9 @@ impl Simulate for SPMeModel {
         );
 
         self.assert_ftcs_stability(dt);
-
-        // Set up cell potential over time
-        let mut cell_potential: Vec<f64> = vec![0.0; time.len()];
         let electrolyte_dx: f64 = self.electrolyte.thickness / ELECTROLYTE_DISCRETISATION as f64;
 
-        for i in 0..time.len() {
+        (0..time.len()).map(move |i| {
             // Step the electrolyte concentration in time
             let flux_e: f64 = self.electrolyte_boundary_flux(current[i]);
             forward_time_centered_space_linear(
@@ -320,17 +285,10 @@ impl Simulate for SPMeModel {
                 flux_p, // flux
             );
 
-            // Calculate cell potential
-            cell_potential[i] = self.cell_potential(current[i]);
-
-            // TODO: Find a better way to save timeseries model state.
-            if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
-                self.concentration.push(self.electrolyte.concentration);
+            SimulationStepOutput {
+                cell_potential: self.cell_potential(current[i]),
+                electrolyte_concentration: self.electrolyte.concentration,
             }
-        }
-        if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
-            self.save_model_state().unwrap();
-        }
-        cell_potential
+        })
     }
 }

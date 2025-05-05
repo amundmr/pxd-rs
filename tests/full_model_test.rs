@@ -1,8 +1,8 @@
-use pxd::model::SPMeModel;
 use pxd::Simulate;
+use pxd::model::SPMeModel;
 
 use std::fs::File;
-use std::io::{Write, BufWriter};
+use std::io::{BufWriter, Write};
 
 fn save_vec_to_file(vec: &Vec<f64>, filename: &str) -> std::io::Result<()> {
     let file = File::create(filename)?;
@@ -29,10 +29,10 @@ fn simulate_default_cycle() {
         t[step] = time_val;
 
         let current_val: f64 = if time_val < time {
-                current // charge
-            } else {
-                -current
-            };
+            current // charge
+        } else {
+            -current
+        };
         i[step] = current_val;
     }
     let mut model = SPMeModel::default();

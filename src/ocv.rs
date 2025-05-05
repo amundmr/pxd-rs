@@ -1,4 +1,4 @@
-use crate::model::{Particle, PARTICLE_DISCRETISATION};
+use crate::{PARTICLE_DISCRETISATION, model::Particle};
 // Holds the open circuit voltage functions for LG MJ1 18650 cell
 
 pub fn open_circuit_voltage_graphite_si(particle: &Particle) -> f64 {

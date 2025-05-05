@@ -1,6 +1,8 @@
-use pxd::math::numerical_methods::{ftcs_stable, forward_time_centered_space_linear, forward_time_centered_space_radial};
+use pxd::math::numerical_methods::{
+    forward_time_centered_space_linear, forward_time_centered_space_radial, ftcs_stable,
+};
 use std::fs::File;
-use std::io::{Write, BufWriter};
+use std::io::{BufWriter, Write};
 
 #[test]
 fn test_fcts() {
@@ -15,13 +17,16 @@ fn test_fcts() {
     concentration[0] = 1300.0; // mol/m^3
 
     // Set up time
-    let time_span: f64 = 60.0*20.0; // seconds
+    let time_span: f64 = 60.0 * 20.0; // seconds
     let dt: f64 = 0.1; // seconds
     let nt: usize = (time_span / dt) as usize;
     let diffusion_coeff: f64 = 1e-12; // ??
 
     // Check stability with given conditions
-    assert!(ftcs_stable(dt, dx, diffusion_coeff), "The parameters used makes the FTCS method unstable.");
+    assert!(
+        ftcs_stable(dt, dx, diffusion_coeff),
+        "The parameters used makes the FTCS method unstable."
+    );
 
     // Optionally create a file writer if environment variable is set
     let mut maybe_writer = if std::env::var("WRITE_TEST_OUTPUT").is_ok() {
@@ -56,7 +61,10 @@ fn test_fcts() {
         }
 
         // Assert monotonic decrease of peak
-        assert!(x0 >= concentration[0], "The concentration peak is not monotonicaly decreasing.");
+        assert!(
+            x0 >= concentration[0],
+            "The concentration peak is not monotonicaly decreasing."
+        );
         x0 = concentration[0];
 
         // Assert that all the other points have increased compared to t = 0
@@ -64,7 +72,9 @@ fn test_fcts() {
             .iter()
             .zip(&concentration[1..])
             .all(|(a, b)| a <= b);
-        assert!(all_less_or_equal, "The concentration of some x-point is below the initial value.");
-
+        assert!(
+            all_less_or_equal,
+            "The concentration of some x-point is below the initial value."
+        );
     }
 }

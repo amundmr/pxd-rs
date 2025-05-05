@@ -72,6 +72,7 @@ pub struct SPMeModel {
     pub negative_electrode: Electrode,
     pub positive_electrode: Electrode,
     pub electrolyte: Electrolyte,
+    pub concentration: Vec<[f64; ELECTROLYTE_DISCRETISATION]>,
 }
 
 impl Default for SPMeModel {
@@ -105,9 +106,10 @@ impl Default for SPMeModel {
             electrolyte: Electrolyte {
                 concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
                 conductivity: 0.8,      // S/m
-                diffusion_coeff: 1.8e-10, // m^2/s avg of Nyman et al. (2008)
+                diffusion_coeff: 1.7e-10, // m^2/s avg of Nyman et al. (2008) (fluctuates between 2.2e-10-1.3e-10 between 800-1200mol/m^3)
                 thickness: 12e-6,      // meters
             },
+            concentration: vec![[1000.0; ELECTROLYTE_DISCRETISATION]; 1],
         };
         model
     }
@@ -219,18 +221,25 @@ impl SPMeModel {
         flux
     }
 
-    fn save_vec_to_file(&self, vec: &Vec<f64>, filename: &str) -> std::io::Result<()> {
+    fn save_to_file(&self, vec: &Vec<[f64;20]>, filename: &str) -> std::io::Result<()> {
         let file = OpenOptions::new()
             .create(true) // Create the file if it doesn't exist
             .append(true) // Open the file in append mode
             .open(filename)?;
         let mut writer = BufWriter::new(file);
-        let line = vec
-            .iter()
-            .map(|value| value.to_string())
-            .collect::<Vec<String>>()
-            .join(","); // Join values with commas
-        writeln!(writer, "{}", line)?; // Write the entire line
+    
+        // Iterate over each line (inner Vec<f64>)
+        for line_vec in vec {
+            let line = line_vec
+                .iter()
+                .map(|value| value.to_string()) // Convert each value to a string
+                .collect::<Vec<String>>()
+                .join(","); // Join values with commas
+    
+            // Write the entire line to the file
+            writeln!(writer, "{}", line)?;
+        }
+    
         Ok(())
     }
 
@@ -244,8 +253,8 @@ impl SPMeModel {
         //     &self.positive_electrode.particle.concentration.to_vec(),
         //     "cathode_concentration.csv",
         // )?;
-        self.save_vec_to_file(
-            &self.electrolyte.concentration.to_vec(),
+        self.save_to_file(
+            &self.concentration.to_vec(),
             "electrolyte_concentration.csv",
         )?;
         Ok(())
@@ -316,9 +325,13 @@ impl Simulate for SPMeModel {
             cell_potential[i] = self.cell_potential(current[i]);
             // Save model state to file
             if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
-                self.save_model_state().unwrap();
+                self.concentration.push(self.electrolyte.concentration);
             }
         }
+        if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
+            self.save_model_state().unwrap();
+        }
         cell_potential
+        
     }
 }

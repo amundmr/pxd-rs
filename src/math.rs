@@ -1,6 +1,5 @@
 pub mod numerical_methods {
 
-
     pub fn forward_time_centered_space_linear(y: &mut [f64], dx: f64, dt: f64, a: f64, flux: f64) {
         // Forward Time Centered Space (FTCS) is an integration method that utilises
         // the finite difference method (FDM). Refer to https://en.wikipedia.org/wiki/FTCS_scheme.
@@ -24,28 +23,28 @@ pub mod numerical_methods {
         // Right boundary by central difference (before y[n-2] is iterated)
         // let dy_dx_right = (y[n - 1] - y[n - 2]) / dx;
         let dy_dx_right: f64 = flux / a;
-        let right_ghost: f64 = y[n-1] + dx * dy_dx_right;
-        let d2y_dx2_right: f64 = (right_ghost - 2.0 * y[n-1] + y[n-2]) / dx2;
+        let right_ghost: f64 = y[n - 1] + dx * dy_dx_right;
+        let d2y_dx2_right: f64 = (right_ghost - 2.0 * y[n - 1] + y[n - 2]) / dx2;
 
         // Interior points
         for i in 1..n - 1 {
             let d2y_dx2 = (y_prev - 2.0 * y[i] + y[i + 1]) / dx2; // Central difference
             y_prev = y[i]; // Make sure we store the value before overwriting
-            y[i] = y[i] + adt * d2y_dx2; // Forward Euler
+            y[i] += adt * d2y_dx2; // Forward Euler
         }
 
         // Left boundary by forward euler
-        y[0] = y[0] + adt * d2y_dx2_left;
+        y[0] += adt * d2y_dx2_left;
 
         // Right boundary by forward euler
-        y[n - 1] = y[n - 1] + adt * d2y_dx2_right;
+        y[n - 1] += adt * d2y_dx2_right;
     }
 
     pub fn ftcs_stable(dt: f64, dx: f64, alpha: f64) -> bool {
         // Returns stability (bool) of forward time centered space method
         // for the heat equation (equaling fickian diffusion)
         // given the timestep, x-step and heat transfer coefficient (diffusion coeff).
-        println!("dt: {:?}, dx: {:?}, alpha: {:?}", dt, dx, alpha);
+        println!("dt: {dt}, dx: {dx}, alpha: {alpha}");
         dt <= dx * dx / (2.0 * alpha)
     }
 
@@ -88,14 +87,14 @@ pub mod numerical_methods {
             let d2y_dr2 = (y_prev - 2.0 * y[i] + y[i + 1]) / dr2; // Central difference
             let dy_dr = (y[i + 1] - y[i - 1]) / (2.0 * dr); // Central difference
             y_prev = y[i]; // Make sure we store the value before overwriting
-            y[i] = y[i] + adt * (d2y_dr2 + 2.0 / rn * dy_dr); // Forward Euler
+            y[i] += adt * (d2y_dr2 + 2.0 / rn * dy_dr); // Forward Euler
         }
 
         // Left boundary by fwd euler
-        y[0] = y[0] + adt * (d2y_dr2_center); //  + 2.0/r * dy_dr_center is ommitted since divisio by zero is naughty
+        y[0] += adt * (d2y_dr2_center); //  + 2.0/r * dy_dr_center is ommitted since divisio by zero is naughty
 
         // Right boundary by fwd euler
-        y[n - 1] = y[n - 1] + adt * (d2y_dr2_surface + 2.0 / r * dy_dr_surface);
+        y[n - 1] += adt * (d2y_dr2_surface + 2.0 / r * dy_dr_surface);
         // r is the surface so need to do n*dr here
     }
 }

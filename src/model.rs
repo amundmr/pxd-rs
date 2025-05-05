@@ -1,20 +1,18 @@
+use crate::Simulate;
 use crate::math::numerical_methods::{
     forward_time_centered_space_linear, forward_time_centered_space_radial, ftcs_stable,
 };
 use crate::math::utils::arcsinh;
 use crate::ocv;
-use crate::Simulate;
 
-use std::f64::consts::PI;
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::BufWriter;
 use std::io::Write;
-use std::fs::OpenOptions;
 
 pub const PARTICLE_DISCRETISATION: usize = 20;
 const ELECTROLYTE_DISCRETISATION: usize = 20;
-const FARADAY: f64 = 96485.3321233100184; // C/mol (=As/mol), 2019 SI revision definition
-const GAS_CONSTANT: f64 = 8.31446261815324; // J/(mol*K), 2019 SI revision definition
+const FARADAY: f64 = 96_485.332_123_310_02; // C/mol (=As/mol), 2019 SI revision definition
+const GAS_CONSTANT: f64 = 8.314_462_618_153_24; // J/(mol*K), 2019 SI revision definition
 const STANDARD_TEMPERATURE: f64 = 298.15; // Kelvin
 const CATION_TRANSFERENCE_NUMBER: f64 = 0.2594; // dimensionless
 
@@ -78,7 +76,7 @@ pub struct SPMeModel {
 impl Default for SPMeModel {
     // Default parameters for an LG MJ1 18650 cylindrical cell
     fn default() -> Self {
-        let model = SPMeModel {
+        Self {
             negative_electrode: Electrode {
                 height: 0.059,      // meters
                 width: 1.22,        // meters
@@ -105,13 +103,12 @@ impl Default for SPMeModel {
             },
             electrolyte: Electrolyte {
                 concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
-                conductivity: 0.8,      // S/m
+                conductivity: 0.8,        // S/m
                 diffusion_coeff: 1.7e-10, // m^2/s avg of Nyman et al. (2008) (fluctuates between 2.2e-10-1.3e-10 between 800-1200mol/m^3)
-                thickness: 12e-6,      // meters
+                thickness: 12e-6,         // meters
             },
             concentration: vec![[1000.0; ELECTROLYTE_DISCRETISATION]; 1],
-        };
-        model
+        }
     }
 }
 
@@ -144,33 +141,38 @@ impl SPMeModel {
         );
     }
 
-
     fn butler_volmer_overpotential(&self, current_density: f64, electrode: &Electrode) -> f64 {
         // Butler volmer overpotential, eta
         // TODO: make B-V function parameters tunable
         let alpha: f64 = 0.5; // charge transfer coefficient
         let reaction_rate_constant: f64 = 1e-3; // reaction rate constant
         let c_e: f64 = 1000.0; // electrolyte concentration mol/m^3, TODO: change this to real value
-        let exchange_current_density: f64 = 
-            reaction_rate_constant 
-            * c_e.powf(alpha) 
+        let exchange_current_density: f64 = reaction_rate_constant
+            * c_e.powf(alpha)
             * electrode.particle.concentration[PARTICLE_DISCRETISATION - 1].powf(alpha)
-            * (1.0 - ( electrode.particle.concentration[PARTICLE_DISCRETISATION - 1] / electrode.particle.concentration_max ) ).powf(alpha);
+            * (1.0
+                - (electrode.particle.concentration[PARTICLE_DISCRETISATION - 1]
+                    / electrode.particle.concentration_max))
+                .powf(alpha);
 
         // Symmetric butler volmer, only valid for alpha = 0.5
-        let butler_volmer: f64 = ( 2.0 * GAS_CONSTANT * STANDARD_TEMPERATURE / FARADAY )
+        let butler_volmer: f64 = (2.0 * GAS_CONSTANT * STANDARD_TEMPERATURE / FARADAY)
             * arcsinh(
-                current_density / ( 2.0* exchange_current_density * self.specific_interfacial_surface_area(electrode) * electrode.thickness )
+                current_density
+                    / (2.0
+                        * exchange_current_density
+                        * self.specific_interfacial_surface_area(electrode)
+                        * electrode.thickness),
             );
-        - butler_volmer // negative sign since we define positive current as charge.
+        -butler_volmer // negative sign since we define positive current as charge.
     }
 
     fn electrolyte_concentration_overpotential(&self) -> f64 {
         // The electrolyte concentration overpotential is the voltage induced by the concentration gradient in the electrolyte.
         let electrolyte_concentration_n: f64 = self.electrolyte.concentration[0];
-        let electrolyte_concentration_p: f64 = self.electrolyte.concentration[ELECTROLYTE_DISCRETISATION - 1];
-        let eta_c: f64 = 
-            2.0 // Accounts for potential drop at both sides
+        let electrolyte_concentration_p: f64 =
+            self.electrolyte.concentration[ELECTROLYTE_DISCRETISATION - 1];
+        let eta_c: f64 = 2.0 // Accounts for potential drop at both sides
             * ( 1.0 - CATION_TRANSFERENCE_NUMBER ) // Describes how much of the current is carried by cations (Li+)
             * (GAS_CONSTANT * STANDARD_TEMPERATURE / FARADAY) // Nernst potential part 1
             * (electrolyte_concentration_p - electrolyte_concentration_n); // Nernst potential part 2
@@ -189,8 +191,8 @@ impl SPMeModel {
             - self.butler_volmer_overpotential(current_density, &self.positive_electrode)
             // Electrolyte concentration overpotential, eta_c
             + self.electrolyte_concentration_overpotential()
-            // TODO: Ohmic overpotential in solid
-            // TODO: Ohmic overpotential in electrolyte
+        // TODO: Ohmic overpotential in solid
+        // TODO: Ohmic overpotential in electrolyte
     }
 
     fn specific_interfacial_surface_area(&self, electrode: &Electrode) -> f64 {
@@ -202,18 +204,18 @@ impl SPMeModel {
     }
 
     fn particle_surface_flux(&self, current: f64, electrode: &Electrode) -> f64 {
-        // The calculation of flux at the particle surface is the current density (cell current divided by electrode area) 
-        // divided by Faraday's constant, $F$, (conversion of current to moles), the 
+        // The calculation of flux at the particle surface is the current density (cell current divided by electrode area)
+        // divided by Faraday's constant, $F$, (conversion of current to moles), the
         // specific interfacial surface area, $a$, and the thickness of the electrode, $L$.
         let current_density: f64 = current / (electrode.height * electrode.width); // A/m^2
         let a: f64 = self.specific_interfacial_surface_area(electrode);
-        let flux: f64 = current_density / ( FARADAY * a * electrode.thickness ); // mol/(s*m^2)
+        let flux: f64 = current_density / (FARADAY * a * electrode.thickness); // mol/(s*m^2)
         flux
     }
 
     fn electrolyte_boundary_flux(&self, current: f64) -> f64 {
-        // The flux at the electrolyte boundary is the current density (cell current divided by electrode area) 
-        // divided by Faraday's constant, $F$, (conversion of current to moles), the 
+        // The flux at the electrolyte boundary is the current density (cell current divided by electrode area)
+        // divided by Faraday's constant, $F$, (conversion of current to moles), the
         // specific interfacial surface area, $a$, and the thickness of the electrolyte, $L$.
         let electrode_area: f64 = self.negative_electrode.height * self.negative_electrode.width;
         let current_density: f64 = current / electrode_area; // A/m^2
@@ -221,13 +223,13 @@ impl SPMeModel {
         flux
     }
 
-    fn save_to_file(&self, vec: &Vec<[f64;20]>, filename: &str) -> std::io::Result<()> {
+    fn save_to_file(&self, vec: &Vec<[f64; 20]>, filename: &str) -> std::io::Result<()> {
         let file = OpenOptions::new()
             .create(true) // Create the file if it doesn't exist
             .append(true) // Open the file in append mode
             .open(filename)?;
         let mut writer = BufWriter::new(file);
-    
+
         // Iterate over each line (inner Vec<f64>)
         for line_vec in vec {
             let line = line_vec
@@ -235,11 +237,11 @@ impl SPMeModel {
                 .map(|value| value.to_string()) // Convert each value to a string
                 .collect::<Vec<String>>()
                 .join(","); // Join values with commas
-    
+
             // Write the entire line to the file
-            writeln!(writer, "{}", line)?;
+            writeln!(writer, "{line}")?;
         }
-    
+
         Ok(())
     }
 
@@ -250,7 +252,6 @@ impl SPMeModel {
         )?;
         Ok(())
     }
-
 }
 
 impl Simulate for SPMeModel {
@@ -289,7 +290,7 @@ impl Simulate for SPMeModel {
                 electrolyte_dx,
                 dt,
                 self.electrolyte.diffusion_coeff,
-                flux_e/1000.0,
+                flux_e / 1000.0,
             );
 
             // Step the particles' concentration in time
@@ -314,7 +315,7 @@ impl Simulate for SPMeModel {
 
             // Calculate cell potential
             cell_potential[i] = self.cell_potential(current[i]);
-            
+
             // TODO: Find a better way to save timeseries model state.
             if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
                 self.concentration.push(self.electrolyte.concentration);
@@ -324,6 +325,5 @@ impl Simulate for SPMeModel {
             self.save_model_state().unwrap();
         }
         cell_potential
-        
     }
 }

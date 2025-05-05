@@ -71,43 +71,51 @@ pub struct SPMeModel {
     pub positive_electrode: Electrode,
     pub electrolyte: Electrolyte,
     pub concentration: Vec<[f64; ELECTROLYTE_DISCRETISATION]>,
+    negative_electrode_area: f64,
 }
 
 impl Default for SPMeModel {
     // Default parameters for an LG MJ1 18650 cylindrical cell
     fn default() -> Self {
+        let negative_electrode = Electrode {
+            height: 0.059,      // meters
+            width: 1.22,        // meters
+            thickness: 86.7e-6, // meters
+            particle: Particle::new(
+                6.1e-6,  // meters
+                5e-14,   // m^2/s
+                34684.0, // mol/m^3
+                1000.0,
+            ),
+            active_material_volume_fraction: 0.694,
+        };
+
+        let positive_electrode = Electrode {
+            height: 0.059,      // meters
+            width: 1.22,        // meters
+            thickness: 66.2e-6, // meters
+            particle: Particle::new(
+                3.8e-6,  // meters
+                5e-14,   // m^2/s
+                50060.0, // mol/m^3
+                49000.0, // mol/m^3
+            ),
+            active_material_volume_fraction: 0.754,
+        };
+
+        let electrolyte = Electrolyte {
+            concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
+            conductivity: 0.8,        // S/m
+            diffusion_coeff: 1.7e-10, // m^2/s avg of Nyman et al. (2008) (fluctuates between 2.2e-10-1.3e-10 between 800-1200mol/m^3)
+            thickness: 12e-6,         // meters
+        };
+
         Self {
-            negative_electrode: Electrode {
-                height: 0.059,      // meters
-                width: 1.22,        // meters
-                thickness: 86.7e-6, // meters
-                particle: Particle::new(
-                    6.1e-6,  // meters
-                    5e-14,   // m^2/s
-                    34684.0, // mol/m^3
-                    1000.0,
-                ),
-                active_material_volume_fraction: 0.694,
-            },
-            positive_electrode: Electrode {
-                height: 0.059,      // meters
-                width: 1.22,        // meters
-                thickness: 66.2e-6, // meters
-                particle: Particle::new(
-                    3.8e-6,  // meters
-                    5e-14,   // m^2/s
-                    50060.0, // mol/m^3
-                    49000.0, // mol/m^3
-                ),
-                active_material_volume_fraction: 0.754,
-            },
-            electrolyte: Electrolyte {
-                concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
-                conductivity: 0.8,        // S/m
-                diffusion_coeff: 1.7e-10, // m^2/s avg of Nyman et al. (2008) (fluctuates between 2.2e-10-1.3e-10 between 800-1200mol/m^3)
-                thickness: 12e-6,         // meters
-            },
+            negative_electrode,
+            positive_electrode,
+            electrolyte,
             concentration: vec![[1000.0; ELECTROLYTE_DISCRETISATION]; 1],
+            negative_electrode_area: negative_electrode.width * negative_electrode.height,
         }
     }
 }
@@ -180,8 +188,8 @@ impl SPMeModel {
     }
 
     fn cell_potential(&self, current: f64) -> f64 {
-        let cell_area: f64 = self.negative_electrode.height * self.negative_electrode.width;
-        let current_density: f64 = current / cell_area; // A/m^2
+        // NOTE: The negative electrode area is used as the cell area here
+        let current_density = current / self.negative_electrode_area; // A/m^2
 
         // Open circuit voltages, U(c)
         ocv::open_circuit_voltage_nmc811(&self.positive_electrode.particle)
@@ -217,8 +225,7 @@ impl SPMeModel {
         // The flux at the electrolyte boundary is the current density (cell current divided by electrode area)
         // divided by Faraday's constant, $F$, (conversion of current to moles), the
         // specific interfacial surface area, $a$, and the thickness of the electrolyte, $L$.
-        let electrode_area: f64 = self.negative_electrode.height * self.negative_electrode.width;
-        let current_density: f64 = current / electrode_area; // A/m^2
+        let current_density: f64 = current / self.negative_electrode_area; // A/m^2
         let flux: f64 = current_density / FARADAY; // mol/(s*m^2)
         flux
     }

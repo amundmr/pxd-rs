@@ -244,15 +244,6 @@ impl SPMeModel {
     }
 
     fn save_model_state(&self) -> std::io::Result<()> {
-        // Save the model state to a file
-        // self.save_vec_to_file(
-        //     &self.negative_electrode.particle.concentration.to_vec(),
-        //     "anode_concentration.csv",
-        // )?;
-        // self.save_vec_to_file(
-        //     &self.positive_electrode.particle.concentration.to_vec(),
-        //     "cathode_concentration.csv",
-        // )?;
         self.save_to_file(
             &self.concentration.to_vec(),
             "electrolyte_concentration.csv",
@@ -323,7 +314,8 @@ impl Simulate for SPMeModel {
 
             // Calculate cell potential
             cell_potential[i] = self.cell_potential(current[i]);
-            // Save model state to file
+            
+            // TODO: Find a better way to save timeseries model state.
             if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
                 self.concentration.push(self.electrolyte.concentration);
             }

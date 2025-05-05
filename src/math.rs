@@ -1,5 +1,6 @@
 pub mod numerical_methods {
 
+
     pub fn forward_time_centered_space_linear(y: &mut [f64], dx: f64, dt: f64, a: f64, flux: f64) {
         // Forward Time Centered Space (FTCS) is an integration method that utilises
         // the finite difference method (FDM). Refer to https://en.wikipedia.org/wiki/FTCS_scheme.
@@ -36,7 +37,7 @@ pub mod numerical_methods {
         // Left boundary by forward euler
         y[0] = y[0] + adt * d2y_dx2_left;
 
-        // Right boundary by backward difference
+        // Right boundary by forward euler
         y[n - 1] = y[n - 1] + adt * d2y_dx2_right;
     }
 

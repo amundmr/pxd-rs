@@ -7,11 +7,11 @@ Numerical method is central difference and forward Euler.
 
 - [x] Empirical open circuit voltage functions
 - [ ] Fickian diffusion in electrolyte
-- [x] Fickian diffusion in particles
-- [x] Butler-Volmer kinetics
 - [ ] Migration in electrolyte
-- [x] Active material volume fraction
 - [ ] Bruggeman correction
+- [x] Fickian diffusion in particles
+- [x] Active material volume fraction
+- [x] Butler-Volmer kinetics
 - [ ] Double layer capacitance
 
 

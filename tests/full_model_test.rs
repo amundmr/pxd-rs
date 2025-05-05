@@ -18,17 +18,17 @@ fn simulate_default_cycle() {
     // Generate input
     // 1C charge and 1C discharge for LG MJ1 18650 cell
     let time: f64 = 60.0 * 60.0; // seconds
-    let dt: f64 = 0.1; // seconds
+    let dt: f64 = 0.001; // seconds
     let current: f64 = 3.2; // Amperes
     let n_steps: usize = (2.0 * time / dt).ceil() as usize;
     let mut t: Vec<f64> = vec![0.0; n_steps];
     let mut i: Vec<f64> = vec![0.0; n_steps];
 
     for step in 0..n_steps {
-        let time_val = step as f64 * dt;
+        let time_val: f64 = step as f64 * dt;
         t[step] = time_val;
 
-        let current_val = if time_val < time {
+        let current_val: f64 = if time_val < time {
                 current // charge
             } else {
                 -current

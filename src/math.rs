@@ -1,6 +1,6 @@
 pub mod numerical_methods {
 
-    pub fn forward_time_centered_space_linear(y: &mut [f64], dx: f64, dt: f64, a: f64) {
+    pub fn forward_time_centered_space_linear(y: &mut [f64], dx: f64, dt: f64, a: f64, flux: f64) {
         // Forward Time Centered Space (FTCS) is an integration method that utilises
         // the finite difference method (FDM). Refer to https://en.wikipedia.org/wiki/FTCS_scheme.
         // It ises forward euler in time, and central difference in space.
@@ -27,12 +27,10 @@ pub mod numerical_methods {
         }
 
         // Left boundary by forward difference
-        let flux_left = 0.0;
-        y[0] = y[0] + adt * (2.0 * (dy_dx_left - flux_left) / dx);
+        y[0] = y[0] + adt * (2.0 * (dy_dx_left - flux/a) / dx);
 
         // Right boundary by backward difference
-        let flux_right = 0.0;
-        y[n - 1] = y[n - 1] + adt * (2.0 * (dy_dx_right - flux_right) / dx);
+        y[n - 1] = y[n - 1] + adt * (2.0 * (dy_dx_right + flux/a) / dx);
     }
 
     pub fn ftcs_stable(dt: f64, dx: f64, alpha: f64) -> bool {
@@ -90,6 +88,21 @@ pub mod numerical_methods {
         // Right boundary by fwd euler
         y[n - 1] = y[n - 1] + adt * (d2y_dr2_surface + 2.0 / r * dy_dr_surface);
         // r is the surface so need to do n*dr here
+    }
+
+    fn fcts_rk4_linear(
+        y: &mut [f64],
+        dx: f64,
+        dt: f64,
+        a: f64,
+        flux: f64,
+    ) {
+        // Forward Time Centered Space (FTCS) is an integration method that utilises
+        // the finite difference method (FDM). Refer to https://en.wikipedia.org/wiki/FTCS_scheme.
+        // It uses runge kutta 4th order in time, and central difference in space.
+        // This is for the linear case (e.g. lithium in electrolyte)
+        //
+        // borrows mutable y-vector, x-step, timestep, the diffusion coefficient, and steps the y-vector forward by one timestep.
     }
 }
 

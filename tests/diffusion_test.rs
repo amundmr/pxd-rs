@@ -38,7 +38,7 @@ fn test_fcts() {
 
     for i in 0..nt {
         // Step the method one step
-        forward_time_centered_space_linear(&mut concentration, dx, dt, diffusion_coeff);
+        forward_time_centered_space_linear(&mut concentration, dx, dt, diffusion_coeff, 0.0);
 
         // Print if test fails
         if i < 30 {

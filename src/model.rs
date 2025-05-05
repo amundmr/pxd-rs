@@ -1,17 +1,22 @@
 use crate::math::numerical_methods::{
     forward_time_centered_space_linear, forward_time_centered_space_radial, ftcs_stable,
 };
-use crate::math::utils::{arcsinh};
+use crate::math::utils::arcsinh;
 use crate::ocv;
 use crate::Simulate;
 
 use std::f64::consts::PI;
+use std::fs::File;
+use std::io::BufWriter;
+use std::io::Write;
+use std::fs::OpenOptions;
 
 pub const PARTICLE_DISCRETISATION: usize = 20;
 const ELECTROLYTE_DISCRETISATION: usize = 20;
 const FARADAY: f64 = 96485.3321233100184; // C/mol (=As/mol), 2019 SI revision definition
 const GAS_CONSTANT: f64 = 8.31446261815324; // J/(mol*K), 2019 SI revision definition
 const STANDARD_TEMPERATURE: f64 = 298.15; // Kelvin
+const CATION_TRANSFERENCE_NUMBER: f64 = 0.2594; // dimensionless
 
 #[derive(Debug, Clone, Copy)]
 pub struct Particle {
@@ -100,8 +105,8 @@ impl Default for SPMeModel {
             electrolyte: Electrolyte {
                 concentration: [1000.0; ELECTROLYTE_DISCRETISATION],
                 conductivity: 0.8,      // S/m
-                diffusion_coeff: 1e-11, // m^2/s
-                thickness: 100e-6,      // meters
+                diffusion_coeff: 1.8e-10, // m^2/s avg of Nyman et al. (2008)
+                thickness: 12e-6,      // meters
             },
         };
         model
@@ -158,13 +163,32 @@ impl SPMeModel {
         - butler_volmer // negative sign since we define positive current as charge.
     }
 
+    fn electrolyte_concentration_overpotential(&self) -> f64 {
+        // The electrolyte concentration overpotential is the voltage induced by the concentration gradient in the electrolyte.
+        let electrolyte_concentration_n: f64 = self.electrolyte.concentration[0];
+        let electrolyte_concentration_p: f64 = self.electrolyte.concentration[ELECTROLYTE_DISCRETISATION - 1];
+        let eta_c: f64 = 
+            2.0 // Accounts for potential drop at both sides
+            * ( 1.0 - CATION_TRANSFERENCE_NUMBER ) // Describes how much of the current is carried by cations (Li+)
+            * (GAS_CONSTANT * STANDARD_TEMPERATURE / FARADAY) // Nernst potential part 1
+            * (electrolyte_concentration_p - electrolyte_concentration_n); // Nernst potential part 2
+        eta_c
+    }
+
     fn cell_potential(&self, current: f64) -> f64 {
         let cell_area: f64 = self.negative_electrode.height * self.negative_electrode.width;
         let current_density: f64 = current / cell_area; // A/m^2
+
+        // Open circuit voltages, U(c)
         ocv::open_circuit_voltage_nmc811(&self.positive_electrode.particle)
             - ocv::open_circuit_voltage_graphite_si(&self.negative_electrode.particle)
+            // Reaction/charge transfer overpotential, eta_r
             - self.butler_volmer_overpotential(current_density, &self.negative_electrode)
             - self.butler_volmer_overpotential(current_density, &self.positive_electrode)
+            // Electrolyte concentration overpotential, eta_c
+            + self.electrolyte_concentration_overpotential()
+            // TODO: Ohmic overpotential in solid
+            // TODO: Ohmic overpotential in electrolyte
     }
 
     fn specific_interfacial_surface_area(&self, electrode: &Electrode) -> f64 {
@@ -183,6 +207,48 @@ impl SPMeModel {
         let a: f64 = self.specific_interfacial_surface_area(electrode);
         let flux: f64 = current_density / ( FARADAY * a * electrode.thickness ); // mol/(s*m^2)
         flux
+    }
+
+    fn electrolyte_boundary_flux(&self, current: f64) -> f64 {
+        // The flux at the electrolyte boundary is the current density (cell current divided by electrode area) 
+        // divided by Faraday's constant, $F$, (conversion of current to moles), the 
+        // specific interfacial surface area, $a$, and the thickness of the electrolyte, $L$.
+        let electrode_area: f64 = self.negative_electrode.height * self.negative_electrode.width;
+        let current_density: f64 = current / electrode_area; // A/m^2
+        let flux: f64 = current_density / FARADAY; // mol/(s*m^2)
+        flux
+    }
+
+    fn save_vec_to_file(&self, vec: &Vec<f64>, filename: &str) -> std::io::Result<()> {
+        let file = OpenOptions::new()
+            .create(true) // Create the file if it doesn't exist
+            .append(true) // Open the file in append mode
+            .open(filename)?;
+        let mut writer = BufWriter::new(file);
+        let line = vec
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<String>>()
+            .join(","); // Join values with commas
+        writeln!(writer, "{}", line)?; // Write the entire line
+        Ok(())
+    }
+
+    fn save_model_state(&self) -> std::io::Result<()> {
+        // Save the model state to a file
+        // self.save_vec_to_file(
+        //     &self.negative_electrode.particle.concentration.to_vec(),
+        //     "anode_concentration.csv",
+        // )?;
+        // self.save_vec_to_file(
+        //     &self.positive_electrode.particle.concentration.to_vec(),
+        //     "cathode_concentration.csv",
+        // )?;
+        self.save_vec_to_file(
+            &self.electrolyte.concentration.to_vec(),
+            "electrolyte_concentration.csv",
+        )?;
+        Ok(())
     }
 
 }
@@ -217,11 +283,13 @@ impl Simulate for SPMeModel {
 
         for i in 0..time.len() {
             // Step the electrolyte concentration in time
+            let flux_e: f64 = self.electrolyte_boundary_flux(current[i]);
             forward_time_centered_space_linear(
                 &mut self.electrolyte.concentration,
                 electrolyte_dx,
                 dt,
                 self.electrolyte.diffusion_coeff,
+                flux_e/1000.0,
             );
 
             // Step the particles' concentration in time
@@ -246,6 +314,10 @@ impl Simulate for SPMeModel {
 
             // Calculate cell potential
             cell_potential[i] = self.cell_potential(current[i]);
+            // Save model state to file
+            if std::env::var("WRITE_MODEL_OUTPUT").is_ok() {
+                self.save_model_state().unwrap();
+            }
         }
         cell_potential
     }
